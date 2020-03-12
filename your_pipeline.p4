@@ -33,6 +33,8 @@ control MyIngress(inout headers hdr,
 //Registers to store synTimestamp and ackTimestamp
     register <bit<48>> (MAX_TIMESTAMP) tcpSynRegister;
     register <bit<48>> (MAX_TIMESTAMP) tcpAckRegister;
+/*    register <bit<32>> (MAX_TIMESTAMP) tcpSynHashRegister;
+    register <bit<32>> (MAX_TIMESTAMP) tcpAckHashRegister;*/
 //Register to store RTT
     register <bit<48>> (MAX_TIMESTAMP) tcpRTTRegister;
 
@@ -150,60 +152,6 @@ control MyIngress(inout headers hdr,
 
 	    meta.ecmp_group_id = ecmp_group_id;
     }
-    action computeSynHash(bit<16> num_nhops) {
-        hash(meta.syn_hash,
-	    HashAlgorithm.crc16,
-	    (bit<1>)0,
-	    {hdr.ipv4.srcAddr,
-	      hdr.ipv4.dstAddr,
-          hdr.tcp.srcPort,
-          hdr.tcp.dstPort,
-          hdr.ipv4.protocol},
-          num_nhops);
-    }
-    action computeAckHash(bit<16> num_nhops){
-        hash(meta.ack_hash,
-	    HashAlgorithm.crc16,
-	    (bit<1>)0,
-	    {hdr.ipv4.srcAddr,
-	      hdr.ipv4.dstAddr,
-          hdr.tcp.srcPort,
-          hdr.tcp.dstPort,
-          hdr.ipv4.protocol},
-          num_nhops);
-    }
-    action get_syn_packetTime(bit<1> x) {
-            bit<48> synTime;
-	    tcpSynRegister.write(meta.syn_hash, standard_metadata.ingress_global_timestamp);
-	    tcpSynRegister.read(synTime,meta.syn_hash);
-    }
-    action get_ack_packetTime(bit<1> y) {
-	    tcpAckRegister.write(meta.ack_hash, standard_metadata.ingress_global_timestamp);
-    }
-    table tcp_syn_match {
-	    key = {
-		    hdr.tcp.syn: exact;
-		    standard_metadata.ingress_port: exact;
-	    }
-	    actions = {
-		    get_syn_packetTime;
-		    NoAction;
-	    }
-	    size = 1;
-	    default_action = NoAction();
-    }
-    table tcp_ack_match {
-	    key = {
-		    hdr.tcp.ack: exact;
-		    standard_metadata.ingress_port: exact;
-	    }
-	    actions = {
-		    get_ack_packetTime;
-		    NoAction;
-	    }
-	    size = 1;
-	    default_action = NoAction();
-    }
 
     table ecmp_group_to_nhop {
 	    key = {
@@ -226,10 +174,71 @@ control MyIngress(inout headers hdr,
             ecmp_group;
             forward;
             drop;
+            NoAction;
         }
         size = 1024;
-        default_action = drop;
+        default_action = NoAction;
     }
+
+
+    /*************************************************************************
+     ********************************  RTT  **********************************
+     *************************************************************************/
+    action computeSynHash(bit<16> num_nhops) {
+	    hash(meta.syn_hash,
+			    HashAlgorithm.crc16,
+			    (bit<1>)0,
+			    {hdr.ipv4.srcAddr,
+			    hdr.ipv4.dstAddr,
+			    hdr.tcp.srcPort,
+			    hdr.tcp.dstPort,
+			    hdr.ipv4.protocol},
+			    num_nhops);
+    }
+    action computeAckHash(bit<16> num_nhops){
+	    hash(meta.ack_hash,
+			    HashAlgorithm.crc16,
+			    (bit<1>)0,
+			    {hdr.ipv4.srcAddr,
+			    hdr.ipv4.dstAddr,
+			    hdr.tcp.srcPort,
+			    hdr.tcp.dstPort,
+			    hdr.ipv4.protocol},
+			    num_nhops);
+    }
+    action get_syn_packetTime(bit<1> x) {
+	    tcpSynRegister.write(meta.syn_hash, standard_metadata.ingress_global_timestamp);
+    }
+    action get_ack_packetTime(bit<1> y) {
+	    tcpAckRegister.write(meta.ack_hash, standard_metadata.ingress_global_timestamp);
+    }
+    table tcp_syn_match {
+	    key = {
+		    hdr.tcp.syn: exact;
+		    standard_metadata.ingress_port: exact;
+	    }
+	    actions = {
+		    computeSynHash;
+		    get_syn_packetTime;
+		    NoAction;
+	    }
+	    size = 1;
+	    default_action = NoAction();
+    }
+    table tcp_ack_match {
+	    key = {
+		    hdr.tcp.ack: exact;
+		    standard_metadata.ingress_port: exact;
+	    }
+	    actions = {
+		    computeAckHash;
+		    get_ack_packetTime;
+		    NoAction;
+            }
+            size = 1;
+            default_action = NoAction();
+    }
+
 
     /*************************************************************************
     *****************************  A P P L Y   *******************************
