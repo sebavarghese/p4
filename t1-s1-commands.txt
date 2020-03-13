@@ -25,8 +25,8 @@ table_add select_mcast_grp set_mcast_grp 4 => 2
 
 
 #tcp_syn_match, get_syn_packetTime | hdr.tcp.syn, standard_metadata.ingress_port
-table_add tcp_syn_match get_syn_packetTime 1 1 => 1
+table_add tcp_syn_match computeSynHashAndTime 1 1 => 1
 
 #tcp_ack_match, get_ack_packetTime | hdr.tcp.ack, standard_metadata.ingress_port
-table_add tcp_ack_match get_ack_packetTime 1 1 => 2
+table_add tcp_ack_match computeAckHashAndTime 1 1 => 1
 

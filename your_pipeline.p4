@@ -184,7 +184,7 @@ control MyIngress(inout headers hdr,
     /*************************************************************************
      ********************************  RTT  **********************************
      *************************************************************************/
-    action computeSynHash(bit<16> num_nhops) {
+    action computeSynHashAndTime(bit<16> num_nhops) {
 	    hash(meta.syn_hash,
 			    HashAlgorithm.crc16,
 			    (bit<1>)0,
@@ -194,8 +194,9 @@ control MyIngress(inout headers hdr,
 			    hdr.tcp.dstPort,
 			    hdr.ipv4.protocol},
 			    num_nhops);
+	    tcpSynRegister.write(meta.syn_hash, standard_metadata.ingress_global_timestamp);
     }
-    action computeAckHash(bit<16> num_nhops){
+    action computeAckHashAndTime(bit<16> num_nhops){
 	    hash(meta.ack_hash,
 			    HashAlgorithm.crc16,
 			    (bit<1>)0,
@@ -205,11 +206,6 @@ control MyIngress(inout headers hdr,
 			    hdr.tcp.dstPort,
 			    hdr.ipv4.protocol},
 			    num_nhops);
-    }
-    action get_syn_packetTime(bit<1> x) {
-	    tcpSynRegister.write(meta.syn_hash, standard_metadata.ingress_global_timestamp);
-    }
-    action get_ack_packetTime(bit<1> y) {
 	    tcpAckRegister.write(meta.ack_hash, standard_metadata.ingress_global_timestamp);
     }
     table tcp_syn_match {
@@ -218,8 +214,7 @@ control MyIngress(inout headers hdr,
 		    standard_metadata.ingress_port: exact;
 	    }
 	    actions = {
-		    computeSynHash;
-		    get_syn_packetTime;
+		    computeSynHashAndTime;
 		    NoAction;
 	    }
 	    size = 1;
@@ -231,8 +226,7 @@ control MyIngress(inout headers hdr,
 		    standard_metadata.ingress_port: exact;
 	    }
 	    actions = {
-		    computeAckHash;
-		    get_ack_packetTime;
+		    computeAckHashAndTime;
 		    NoAction;
             }
             size = 1;
@@ -277,23 +271,27 @@ control MyIngress(inout headers hdr,
         }
         if (hdr.tcp.isValid()) {
             if(hdr.tcp.syn == 1 && hdr.tcp.ack == 0) {
-                tcp_syn_match.apply();
-            }
+		    tcp_syn_match.apply();
+		    }
+            
             if(hdr.tcp.ack == 1 && hdr.tcp.syn == 0) {
-                tcp_ack_match.apply();
-            }
+		    tcp_ack_match.apply();{
+		    }
+		}
             bit<32> rtt_index;
             bit<48> interval;
             bit<48> synPacketTime;
             bit<48> ackPacketTime;
 	    tcpSynRegister.read(synPacketTime, meta.syn_hash);
 	    tcpAckRegister.read(ackPacketTime, meta.ack_hash);
-	    if( ackPacketTime != 0 && synPacketTime != 0) {
-		    current_rtt_index.read(rtt_index, 0);
-		    interval = ackPacketTime - synPacketTime;
-		    tcpRTTRegister.write(rtt_index, interval);
-		    tcpRTTRegister.read(interval, rtt_index);
-		    current_rtt_index.write(0, (rtt_index + 1) % MAX_NUM_RTTS);
+            if(meta.syn_hash == meta.ack_hash) {
+		    if( ackPacketTime != 0 && synPacketTime != 0) {
+			    current_rtt_index.read(rtt_index, 0);
+			    interval = ackPacketTime - synPacketTime;
+			    tcpRTTRegister.write(rtt_index, interval);
+			    tcpRTTRegister.read(interval, rtt_index);
+			    current_rtt_index.write(0, (rtt_index + 1) % MAX_NUM_RTTS);
+		    }
 	    }
 	}
     }
